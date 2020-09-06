@@ -1,0 +1,633 @@
+---
+title: "txtMiningAssgt_gettingStarted"
+author: "sid b"
+date: "4/17/2020"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#loading Packages
+```{r results=FALSE, cache=TRUE}
+library('tidyverse')
+library(tidytext)
+library(SnowballC)
+library(textstem)
+library(stringr)
+
+```
+
+#loading data
+```{r results=FALSE, cache=TRUE}
+
+# the data file uses ';' as delimiter, and for this we use the read_csv2 function
+resReviewsData <- read_csv2("C:/Users/ritu2/Desktop/UIC MSBA/Sem 1/Data Mining/Assignment 4/yelpResReviewSample/yelpResReviewSample.csv")
+
+```
+
+# ##########################
+#Part (a) - Data Exploration
+# ##########################
+
+```{r}
+#Star Ratings vs No. of reviews
+#number of reviews by start-rating
+Table <- resReviewsData %>% group_by(stars) %>% count()
+Table
+ggplot(resReviewsData, aes(x=stars)) + geom_bar(width = 0.5, fill = "#FF6666") + xlab("Stars") + ylab("No. of Reviews")
+
+#The reviews are from various locations
+#State vs No. of reviews
+Table <- resReviewsData %>% group_by(state) %>% count()
+Table
+ggplot(resReviewsData, aes(x=state)) + geom_bar(width = 0.5, fill = "#FF6666") + xlab("State") + ylab("No. of Reviews")
+
+#The reviews are from various postal_code
+#State vs No. of reviews
+Table <- resReviewsData %>% group_by(postal_code) %>% count()
+Table
+ggplot(resReviewsData, aes(x=postal_code)) + geom_bar(width = 0.5, fill = "#FF6666") + xlab("Postal_code") + ylab("No. of Reviews")
+
+#Review length for different star ratings
+#ggplot(resReviewsData, aes(x=nchar(text), fill=nchar(text))) + geom_bar(width = 0.5, fill = "#FF6666") + facet_wrap(~stars) + xlab("Review Text Length")
+
+#Star ratings vs review length
+#resReviewsData$stars <- as.factor(resReviewsData$stars)
+#ggplot(resReviewsData, aes(x=stars, y=nchar(text), fill=stars)) + geom_boxplot(width = 0.5) + xlab("Stars") + ylab("Review Text Length")
+#resReviewsData$stars <- as.integer(resReviewsData$stars)
+
+#Star Ratings vs Cool reaction
+ggplot(resReviewsData, aes(x=stars, y=cool, fill=stars)) + geom_bar(stat= "identity") + xlab("Stars") + ylab("Cool")
+graph1 <- resReviewsData %>% group_by(stars) %>% summarize(mean(cool))
+ggplot(graph1) + aes(x=graph1$stars, y=graph1$`mean(cool)`, fill=graph1$stars) + geom_line() + xlab("Stars") + ylab("Average of Cool Reaction")
+
+#Star Ratings vs Funny reaction
+ggplot(resReviewsData, aes(x=stars, y=funny, fill=stars)) + geom_bar(stat= "identity") + xlab("Stars") + ylab("Funny")
+graph1 <- resReviewsData %>% group_by(stars) %>% summarize(mean(funny))
+ggplot(graph1) + aes(x=graph1$stars, y=graph1$`mean(funny)`, fill=graph1$stars) + geom_line() + xlab("Stars") + ylab("Average of Funny Reaction")
+
+#Star Ratings vs Useful reaction
+ggplot(resReviewsData, aes(x=stars, y=useful, fill=stars)) + geom_bar(stat= "identity") + xlab("Stars") + ylab("Useful")
+graph1 <- resReviewsData %>% group_by(stars) %>% summarize(mean(useful))
+ggplot(graph1) + aes(x=graph1$stars, y=graph1$`mean(useful)`, fill=graph1$stars) + geom_line() + xlab("Stars") + ylab("Average of Useful Reaction")
+
+#Dimensions for resReviewsData 
+resReviewsData %>% dim()
+
+#Reviews only from 5 digit postal codes
+rrData <- resReviewsData %>% filter(str_detect(postal_code, "^[0-9]{1,5}"))
+
+#Dimensions for rrData
+rrData %>% dim()
+
+#hist(resReviewsData$stars)
+ggplot(resReviewsData, aes(x= funny, y=stars)) +geom_point()
+ggplot(resReviewsData, aes(x= cool, y=stars)) +geom_point()
+ggplot(resReviewsData, aes(x= useful, y=stars)) +geom_point()
+
+```
+
+
+# #######################
+#Part (b) - Data Cleaning
+# #######################
+
+# ################### General Cleaning Steps ##########################
+
+#a. Tokenisation
+```{r message=FALSE , cache=TRUE}
+
+#tokenize the text of the reviews in the column named 'text'
+rrTokens <- rrData %>% unnest_tokens(word, text)
+# this will retain all other attributes
+
+#Or we can select just the review_id and the text column
+#rrTokens <- rrData %>% select(review_id, stars, text ) %>% unnest_tokens(word, text)
+
+#Dimensions for rrTokens
+rrTokens %>% dim()
+
+#Dimensions for the distinct word tokens - How many tokens - 68204
+rrTokens %>% distinct(word) %>% dim()
+
+
+```
+
+
+#b. Removing stop words
+```{r message=FALSE , cache=TRUE}
+
+# removing stop words
+rrTokens <- rrTokens %>% anti_join(stop_words, by= "word")
+
+ #compare with earlier - what fraction of tokens were stopwords? - 67505 words after stopwords
+rrTokens %>% distinct(word) %>% dim()
+
+#count the total occurrences of differet words, & sort by most frequent - top 20 words
+table1 <- rrTokens %>% count(word, sort=TRUE) %>% top_n(20)
+ggplot(table1, aes(x=table1$word, y=table1$n)) + geom_bar(stat="identity", fill="#CC0000", color="#FFFFFF") + coord_flip() + scale_y_continuous(name="Occurence") + scale_x_discrete(name="Top 20 most frequent words") + theme(axis.text.y = element_text(face = "bold", size = 10))
+
+#Are there some words that occur in a large majority of reviews, or which are there in very few reviews?   
+rareWords <-rrTokens %>% count(word, sort=TRUE) %>% filter(n<10)
+rareWords
+
+#Let's remove the words which are not present in at least 10 reviews - omit  words less frequent
+xx<-anti_join(rrTokens, rareWords)
+
+#check the words in xx 
+xx %>% count(word, sort=TRUE) %>% view()
+
+#you willl see that among the least frequently occurring words are those starting with or including numbers (as in 6oz, 1.15,...). 
+#Remove the terms containing digits?
+xx2<- xx %>% filter(str_detect(word,"[0-9]")==FALSE)
+
+#the variable xx, xx2 are for checking ....if this is what we want, set the rrTokens to the reduced set of words - filter words and new data set
+#confirm that you want these changes
+rrTokens<- xx2
+
+#And you can remove xx, xx2 from the environment.
+rm(xx, xx2, graph1)
+
+#How many distinct tokens remain ?
+rrTokens%>% distinct(word) %>% dim()
+
+```
+
+
+#Analyze proportion of words by star ratings 
+```{r  message=FALSE , cache=TRUE}
+
+#Check words by star rating of reviews
+rrTokens %>% group_by(stars) %>% count(word, sort=TRUE) %>% arrange(desc(stars)) %>% view()
+
+#proportion of word occurrence by star ratings - what are the most commonly used words by start rating
+ws <- rrTokens %>% group_by(stars) %>% count(word, sort=TRUE)
+ws<-  ws %>% group_by(stars) %>% mutate(prop=n/sum(n))  %>% arrange(desc(stars, prop))
+
+#proportion of word occurrence wrt different star ratings (top 20 for each) - to see the top 20 words by star ratings
+table2 <- ws %>% group_by(stars) %>% arrange(stars, desc(prop)) %>% top_n(20)
+
+#1 star rating
+star1 <- table2 %>% filter(stars=='1') %>% arrange(desc(prop))
+ggplot(star1, aes(x=star1$word, y=star1$prop, fill=star1$word)) + geom_bar(stat="identity") + coord_flip() + scale_y_continuous(name="Proportion of word") + scale_x_discrete(name="Top 20 most frequent words of Star 1") + theme(axis.text.y = element_text(hjust = 1, size = 8, face = "bold"))
+
+#2 star rating
+star2 <- table2 %>% filter(stars=='2') %>% arrange(desc(prop))
+ggplot(star2, aes(x=star2$word, y=star2$prop, fill=star2$word)) + geom_bar(stat="identity") + coord_flip() + scale_y_continuous(name="Proportion of word") + scale_x_discrete(name="Top 20 most frequent words of Star 2") + theme(axis.text.y = element_text(hjust = 1, size = 8, face = "bold"))
+
+#3 star rating
+star3 <- table2 %>% filter(stars=='3') %>% arrange(desc(prop))
+ggplot(star3, aes(x=star3$word, y=star3$prop, fill=star3$word)) + geom_bar(stat="identity") + coord_flip() + scale_y_continuous(name="Proportion of word") + scale_x_discrete(name="Top 20 most frequent words of Star 3") + theme(axis.text.y = element_text(hjust = 1, size = 8, face = "bold"))
+
+#4 star rating
+star4 <- table2 %>% filter(stars=='4') %>% arrange(desc(prop))
+ggplot(star4, aes(x=star4$word, y=star4$prop, fill=star4$word)) + geom_bar(stat="identity") + coord_flip() + scale_y_continuous(name="Proportion of word") + scale_x_discrete(name="Top 20 most frequent words of Star 4") + theme(axis.text.y = element_text(hjust = 1, size = 8, face = "bold"))
+
+#5 star rating
+star5 <- table2 %>% filter(stars=='5') %>% arrange(desc(prop))
+ggplot(star5, aes(x=star5$word, y=star5$prop, fill=star5$word)) + geom_bar(stat="identity") + coord_flip() + scale_y_continuous(name="Proportion of word") + scale_x_discrete(name="Top 20 most frequent words of Star 5") + theme(axis.text.y = element_text(hjust = 1, size = 8, face = "bold"))
+
+#to plot in single graph
+ws%>% group_by(stars) %>% arrange(stars, desc(prop)) %>% filter(row_number()<=20L) %>% ggplot(aes(x=word, y=prop, fill=word)) + geom_bar(stat="identity") + geom_col() + coord_flip() + facet_wrap((~stars)) + scale_y_continuous(name="Proportion of word") + scale_x_discrete(name="Top 20 most frequent words of Star 5") + theme(axis.text.y = element_text(hjust = 1, size = 8, face = "bold"))
+
+```
+
+#checking various words by their proportion wrt ratings
+```{r}
+
+#check the proportion of 'love' among reviews with 1,2,..5 stars
+aa <- ws %>% filter(word=='love')
+ggplot(aa, aes(x=aa$stars, y=aa$prop)) + geom_bar(stat = "identity", fill=aa$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Love") + scale_x_continuous(name = "Star rating")
+
+
+#check the proportion of 'food' among reviews with 1,2,..5 stars 
+a <- ws %>% filter(word=='food')
+ggplot(a, aes(x=a$stars, y=a$prop)) + geom_bar(stat = "identity", fill=a$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Food") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'time' among reviews with 1,2,..5 stars 
+b <- ws %>% filter(word=='time')
+ggplot(b, aes(x=b$stars, y=b$prop)) + geom_bar(stat = "identity", fill=b$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Time") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'service' among reviews with 1,2,..5 stars 
+c <- ws %>% filter(word=='service')
+ggplot(c, aes(x=c$stars, y=c$prop)) + geom_bar(stat = "identity", fill=c$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Service") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'eat' among reviews with 1,2,..5 stars 
+d <- ws %>% filter(word=='eat')
+ggplot(d, aes(x=d$stars, y=d$prop)) + geom_bar(stat = "identity", fill=d$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Eat") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'restaurant' among reviews with 1,2,..5 stars 
+e <- ws %>% filter(word=='restaurant')
+ggplot(e, aes(x=e$stars, y=e$prop)) + geom_bar(stat = "identity", fill=e$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Restaurant") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'chicken' among reviews with 1,2,..5 stars 
+f <- ws %>% filter(word=='chicken')
+ggplot(f, aes(x=f$stars, y=f$prop)) + geom_bar(stat = "identity", fill=f$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Chicken") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'pizza' among reviews with 1,2,..5 stars 
+g <- ws %>% filter(word=='pizza')
+ggplot(g, aes(x=g$stars, y=g$prop)) + geom_bar(stat = "identity", fill=g$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Pizza") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'taste' among reviews with 1,2,..5 stars 
+h <- ws %>% filter(word=='taste')
+ggplot(h, aes(x=h$stars, y=h$prop)) + geom_bar(stat = "identity", fill=h$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Taste") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'price' among reviews with 1,2,..5 stars 
+i <- ws %>% filter(word=='price')
+ggplot(i, aes(x=i$stars, y=i$prop)) + geom_bar(stat = "identity", fill=i$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Price") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'sauce' among reviews with 1,2,..5 stars 
+j <- ws %>% filter(word=='sauce')
+ggplot(j, aes(x=j$stars, y=j$prop)) + geom_bar(stat = "identity", fill=j$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Sauce") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'fry' among reviews with 1,2,..5 stars 
+k <- ws %>% filter(word=='fry')
+ggplot(k, aes(x=k$stars, y=k$prop)) + geom_bar(stat = "identity", fill=k$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Fry") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'menu' among reviews with 1,2,..5 stars 
+l <- ws %>% filter(word=='menu')
+ggplot(l, aes(x=l$stars, y=l$prop)) + geom_bar(stat = "identity", fill=l$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Menu") + scale_x_continuous(name = "Star rating")
+
+#check the proportion of 'nice' among reviews with 1,2,..5 stars 
+m <- ws %>% filter(word=='nice')
+ggplot(m, aes(x=m$stars, y=m$prop)) + geom_bar(stat = "identity", fill=m$stars, width = 0.5) + coord_flip() + scale_y_continuous(name = "Proportion of Nice") + scale_x_continuous(name = "Star rating")
+
+```
+
+
+#Can we get a sense of which words are related to higher/lower star raings in general? 
+#One approach is to calculate the average star rating associated with each word - can sum the star ratings associated with reviews where each word occurs in.  Can consider the proportion of each word among reviews with a star rating.
+```{r}
+
+#Finding words indicative of positive and negative sentiment 
+#(average star rating of a word approach)
+xx<- ws %>% group_by(word) %>% summarise(totWS=sum(stars*prop)) %>% arrange(desc(totWS))
+
+#What are the 20 words with highest and lowerst star rating
+gtop_20    <- xx %>% top_n(20)
+ggplot(gtop_20, aes(x=gtop_20$word, y=gtop_20$totWS, fill=gtop_20$word)) + geom_bar(stat = "identity", width = 0.5) + coord_flip() + scale_y_continuous(name = "Average Star Rating") + scale_x_discrete(name = "Words")
+
+gbottom_20 <- xx %>% top_n(-20)
+ggplot(gbottom_20, aes(x=gbottom_20$word, y=gbottom_20$totWS, fill=gbottom_20$word)) + geom_bar(stat = "identity", width = 0.5) + coord_flip() + scale_y_continuous(name = "Average Star Rating") + scale_x_discrete(name = "Words")
+
+```
+
+
+#removing words not falling in any sentiments but occuring in high proportion
+```{r}
+
+#removing very high frequency words that have similar proportion across all ratings
+rem <- rrTokens %>% filter(word=='food' | word=='time' | word=='service' | word=='eat' | word=='restaurant' | word=='chicken' | word=='pizza' | word=='price' | word=='sauce' | word=='fry' | word=='menu' | word=='taste')
+rrTokens <- anti_join(rrTokens, rem)
+
+#Dimensions for rrTokens
+rrTokens %>% dim()
+
+#dimension for distinct words after removing rare words
+rrTokens %>% distinct(word) %>% dim()
+
+#doing enviornment cleanup
+rm(aa,a,b,c,d,e,f,g,h,i,j,k,l,m,star1, star2, star3, star4, star5, gbottom_20, gtop_20)
+
+```
+
+
+#Stemming and Lemmatization
+```{r , cache=TRUE}
+#Stemming
+rrTokens_stem<-rrTokens %>%  mutate(word_stem = SnowballC::wordStem(word))
+#Dimensions for rrTokens
+rrTokens_stem %>% dim()
+#Dimensions for the distinct word_stem tokens
+rrTokens_stem %>% distinct(word_stem) %>% dim()
+
+#Lemmatization
+rrTokens_lemm<-rrTokens %>%  mutate(word_lemma = textstem::lemmatize_words(word))
+#Dimensions for rrTokens
+rrTokens_lemm %>% dim()
+#Dimensions for the distinct word_lemma tokens
+rrTokens_lemm %>% distinct(word_lemma) %>% dim()
+
+#We move ahead with Lemmatization
+rrTokens<-rrTokens %>%  mutate(word = textstem::lemmatize_words(word))
+#Dimensions for rrTokens
+rrTokens %>% dim()
+#Dimensions for the distinct word_stem tokens - 6868
+rrTokens %>% distinct(word) %>% dim()
+
+
+```
+
+
+#Term-frequency, tf-idf
+```{r  message=FALSE , cache=TRUE}
+
+#We may want to filter out words with 3 or less than 3 characters and those with 15 or more than 15 characters
+
+set_1<-rrTokens %>% filter(str_length(word)<=3)
+set_1 %>% distinct(word) %>% dim() # 596 words
+
+set_2<-rrTokens %>% filter(str_length(word)>=15)
+set_2 %>% distinct(word) %>% dim() # 11 words
+
+#Remove such words
+rrTokens<-anti_join(rrTokens, set_1)
+rrTokens<-anti_join(rrTokens, set_2)
+
+#Dimensions for rrTokens
+rrTokens %>% dim()
+
+#Dimensions for the distinct word tokens - 6261
+rrTokens %>% distinct(word) %>% dim()
+
+#make a copy of rrTokens
+rrTokens1 <- rrTokens
+
+#calculate term frequency (tf)
+rrTokens<- rrTokens %>% group_by(review_id, stars) %>% count(word)
+
+#count total number of words by review, and add this in a column
+totWords<-rrTokens  %>% group_by(review_id) %>%  count(word, sort=TRUE) %>% summarise(total=sum(n))
+
+#add the column of counts
+xx<-left_join(rrTokens, totWords)
+
+# now n/total gives the tf values
+xx<-xx %>% mutate(tf=n/total)
+head(xx)
+
+#We can use the bind_tf_idf function to calculate the tf, idf and tf_idf values
+#calculate inverse document frequency (idf) & tf-idf
+rrTokens<-rrTokens %>% bind_tf_idf(word, review_id, n)
+head(rrTokens)
+
+```
+
+
+# done till here
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# part (c)
+
+#using dictionary
+
+Sentiment analysis using the 3 sentiment dictionaries available with tidytext (use library(textdata))
+AFINN http://www2.imm.dtu.dk/pubdb/views/publication_details.php?id=6010
+bing  https://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html 
+nrc http://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm
+
+```{r message=FALSE , cache=TRUE}
+
+library(textdata)
+
+#take a look at the wordsin the sentimennt dictionaries
+get_sentiments("bing") %>% view()
+get_sentiments("nrc") %>% view()
+get_sentiments("afinn") %>% view()
+
+#sentiment of words in rrTokens - used bing just for demo - use all 3 dictionaries - take cares of all words of reviews (d part)
+rrSenti_bing<- rrTokens %>% left_join(get_sentiments("bing"), by="word")
+
+#if we want to retain only the words which match the sentiment dictionary, do an inner-join - only match the words that are there in dictionary
+rrSenti_bing<- rrTokens %>% inner_join(get_sentiments("bing"), by="word")
+
+
+#Analyze Which words contribute to positive/negative sentiment - we can count the ocurrences of positive/negative sentiment words in the reviews
+xx<-rrSenti_bing %>% group_by(word, sentiment) %>% summarise(totOcc=sum(n)) %>% arrange(sentiment, desc(totOcc))
+
+#negate the counts for the negative sentiment words
+xx<- xx %>% mutate (totOcc=ifelse(sentiment=="positive", totOcc, -totOcc))
+
+#the most positive and most negative words
+xx<-ungroup(xx)
+xx %>% top_n(25)
+xx %>% top_n(-25)
+
+#You can plot these
+rbind(top_n(xx, 25), top_n(xx, -25)) %>% ggplot(aes(word, totOcc, fill=sentiment)) +geom_col()+coord_flip()
+
+#or, with a better reordering of words
+rbind(top_n(xx, 25), top_n(xx, -25)) %>% mutate(word=reorder(word,totOcc)) %>% ggplot(aes(word, totOcc, fill=sentiment)) +geom_col()+coord_flip()
+
+#Q - does this 'make sense'?  Do the different dictionaries give similar results; do you notice much difference?
+
+
+#with "nrc" dictionary
+rrSenti_nrc<-rrTokens %>% inner_join(get_sentiments("nrc"), by="word") %>% group_by (word, sentiment) %>% summarise(totOcc=sum(n)) %>% arrange(sentiment, desc(totOcc))
+
+#How many words for the different sentiment categories
+rrSenti_nrc %>% group_by(sentiment) %>% summarise(count=n(), sumn=sum(totOcc))
+
+#In 'nrc', the dictionary contains words defining different sentiments, like anger, disgust, positive, negative, joy, trust,.....   you should check the words deonting these different sentiments
+rrSenti_nrc %>% filter(sentiment=='anticipation') %>% view()
+rrSenti_nrc %>% filter(sentiment=='fear') %>% view()
+#...
+
+#Suppose you want   to consider  {anger, disgust, fear sadness, negative} to denote 'bad' reviews, and {positive, joy, anticipation, trust} to denote 'good' reviews
+xx<-rrSenti_nrc %>% mutate(goodBad=ifelse(sentiment %in% c('anger', 'disgust', 'fear', 'sadness', 'negative'), -totOcc, ifelse(sentiment %in% c('positive', 'joy', 'anticipation', 'trust'), totOcc, 0)))
+
+xx<-ungroup(xx)
+top_n(xx, 10)
+top_n(xx, -10)
+
+rbind(top_n(xx, 25), top_n(xx, -25)) %>% mutate(word=reorder(word,goodBad)) %>% ggplot(aes(word, goodBad, fill=goodBad)) +geom_col()+coord_flip()
+
+
+#AFINN carries a numeric value for positive/negative sentiment -- how would you use these
+
+```
+
+
+Analysis by review sentiment
+So far, we have analyzed overall sentiment across reviews, now let's look into sentiment by review and see how that relates to review's star ratings
+```{r message=FALSE , cache=TRUE}
+
+#summarise positive/negative sentiment words per review
+revSenti_bing <- rrSenti_bing %>% group_by(review_id, stars) %>% summarise(nwords=n(),posSum=sum(sentiment=='positive'), negSum=sum(sentiment=='negative'))
+
+revSenti_bing<- revSenti_bing %>% mutate(posProp=posSum/nwords, negProp=negSum/nwords)
+revSenti_bing<- revSenti_bing %>% mutate(sentiScore=posProp-negProp)
+
+#Do review start ratings correspond to the the positive/negative sentiment words
+revSenti_bing %>% group_by(stars) %>% summarise(avgPos=mean(posProp), avgNeg=mean(negProp), avgSentiSc=mean(sentiScore))
+
+
+
+#with AFINN dictionary words....following similar steps as above, but noting that AFINN assigns negative to positive sentiment value for words matching the dictionary
+rrSenti_afinn<- rrTokens %>% inner_join(get_sentiments("afinn"), by="word")
+
+revSenti_afinn <- rrSenti_afinn %>% group_by(review_id, stars) %>% summarise(nwords=n(), sentiSum =sum(value))
+
+revSenti_afinn %>% group_by(stars) %>% summarise(avgLen=mean(nwords), avgSenti=mean(sentiSum))
+
+```
+
+
+Can we classify reviews on high/low stats based on aggregated sentiment of words in the reviews
+```{r message=FALSE , cache=TRUE}
+
+#we can consider reviews with 1 to 2 stars as positive, and this with 4 to 5 stars as negative
+revSenti_afinn <- revSenti_afinn %>% mutate(hiLo=ifelse(stars<=2,-1, ifelse(stars>=4, 1, 0 )))
+revSenti_afinn <- revSenti_afinn %>% mutate(pred_hiLo=ifelse(sentiSum >0, 1, -1)) 
+#filter out the reviews with 3 stars, and get the confusion matrix for hiLo vs pred_hiLo
+xx<-revSenti_afinn %>% filter(hiLo!=0)
+table(actual=xx$hiLo, predicted=xx$pred_hiLo )
+
+```
+
+
+Can we learn a model to predict hiLo ratings, from words in reviews
+```{r message =FALSE, cache=TRUE}
+
+#considering only those words which match a sentiment dictionary (for eg.  bing)
+
+#use pivot_wider to convert to a dtm form where each row is for a review and columns correspond to words   (https://tidyr.tidyverse.org/reference/pivot_wider.html)
+#revDTM_sentiBing <- rrSenti_bing %>%  pivot_wider(id_cols = review_id, names_from = word, values_from = tf_idf)
+
+#Or, since we want to keep the stars column
+revDTM_sentiBing <- rrSenti_bing %>%  pivot_wider(id_cols = c(review_id,stars), names_from = word, values_from = tf_idf)  %>% ungroup()
+    #Note the ungroup() at the end -- this is IMPORTANT;  we have grouped based on (review_id, stars), and this grouping is retained by default, and can cause problems in the later steps
+
+#filter out the reviews with stars=3, and calculate hiLo sentiment 'class'
+revDTM_sentiBing <- revDTM_sentiBing %>% filter(stars!=3) %>% mutate(hiLo=ifelse(stars<=2, -1, 1)) %>% select(-stars)
+
+#how many review with 1, -1  'class'
+revDTM_sentiBing %>% group_by(hiLo) %>% tally()
+
+#develop a random forest model to predict hiLo from the words in the reviews
+
+library(ranger)
+
+#replace all the NAs with 0
+revDTM_sentiBing<-revDTM_sentiBing %>% replace(., is.na(.), 0)
+
+revDTM_sentiBing$hiLo<- as.factor(revDTM_sentiBing$hiLo)
+
+
+library(rsample)
+revDTM_sentiBing_split<- initial_split(revDTM_sentiBing, 0.5)
+revDTM_sentiBing_trn<- training(revDTM_sentiBing_split)
+revDTM_sentiBing_tst<- testing(revDTM_sentiBing_split)
+
+rfModel1<-ranger(dependent.variable.name = "hiLo", data=revDTM_sentiBing_trn %>% select(-review_id), num.trees = 500, importance='permutation', probability = TRUE)
+
+rfModel1
+
+#which variables are important
+importance(rfModel1) %>% view()
+
+
+#Obtain predictions, and calculate performance
+revSentiBing_predTrn<- predict(rfModel1, revDTM_sentiBing_trn %>% select(-review_id))$predictions
+
+revSentiBing_predTst<- predict(rfModel1, revDTM_sentiBing_tst %>% select(-review_id))$predictions
+
+table(actual=revDTM_sentiBing_trn$hiLo, preds=revSentiBing_predTrn[,2]>0.5)
+table(actual=revDTM_sentiBing_tst$hiLo, preds=revSentiBing_predTst[,2]>0.5)
+   #Q - is 0.5 the best threshold to use here?  Can find the optimal threshold from the     ROC analyses
+
+
+library(pROC)
+rocTrn <- roc(revDTM_sentiBing_trn$hiLo, revSentiBing_predTrn[,2], levels=c(-1, 1))
+rocTst <- roc(revDTM_sentiBing_tst$hiLo, revSentiBing_predTst[,2], levels=c(-1, 1))
+
+plot.roc(rocTrn, col='blue', legacy.axes = TRUE)
+plot.roc(rocTst, col='red', add=TRUE)
+legend("bottomright", legend=c("Training", "Test"),
+        col=c("blue", "red"), lwd=2, cex=0.8, bty='n')
+
+
+#Best threshold from ROC analyses
+bThr<-coords(rocTrn, "best", ret="threshold", transpose = FALSE)
+table(actual=revDTM_sentiBing_trn$hiLo, preds=revSentiBing_predTrn[,2]>bThr)
+
+```
+
+
+Develop a model on broader set of terms (not just those matching a sentiment dictionary)
+```{r message=FALSE, cache=TRUE}
+
+#if we want to remove the words which are there in too many or too few of the reviews
+#First find out how many reviews each word occurs in
+rWords<-rrTokens %>% group_by(word) %>% summarise(nr=n()) %>% arrange(desc(nr))
+
+#How many words are there
+length(rWords$word)
+
+top_n(rWords, 20)
+top_n(rWords, -20)
+
+#Suppose we want to remove words which occur in > 90% of reviews, and those which are in, for example, less than 30 reviews
+reduced_rWords<-rWords %>% filter(nr< 6000 & nr > 30)
+length(reduced_rWords$word)
+
+#reduce the rrTokens data to keep only the reduced set of words
+reduced_rrTokens <- left_join(reduced_rWords, rrTokens)
+
+#Now convert it to a DTM, where each row is for a review (document), and columns are the terms (words)
+revDTM  <- reduced_rrTokens %>%  pivot_wider(id_cols = c(review_id,stars), names_from = word, values_from = tf_idf)  %>% ungroup()
+
+#Check
+dim(revDTM)
+  #do the numberof columsnmatch the words -- we should also have the stars column and the review_id
+
+#create the dependent variable hiLo of good/bad reviews absed on stars, and remove the review with stars=3
+revDTM <- revDTM %>% filter(stars!=3) %>% mutate(hiLo=ifelse(stars<=2, -1, 1)) %>% select(-stars)
+
+#replace NAs with 0s
+revDTM<-revDTM %>% replace(., is.na(.), 0)
+
+revDTM$hiLo<-as.factor(revDTM$hiLo)
+
+revDTM_split<- initial_split(revDTM, 0.5)
+revDTM_trn<- training(revDTM_split)
+revDTM_tst<- testing(revDTM_split)
+
+#this can take some time...the importance ='permutation' takes time (we know why)
+rfModel2<-ranger(dependent.variable.name = "hiLo", data=revDTM_trn %>% select(-review_id), num.trees = 500, importance='permutation', probability = TRUE)
+
+rfModel2
+
+```
+
+
+#develop a naive-Bayes model - https://www.rdocumentation.org/packages/e1071/versions/1.7-2/topics/naiveBayes
+```{r message=FALSE, cache=TRUE}
+library(e1071)
+nbModel1<-naiveBayes(hiLo ~ ., data=revDTM_sentiBing_trn %>% select(-review_id))
+
+revSentiBing_NBpredTrn<-predict(nbModel1, revDTM_sentiBing_trn, type = "raw")
+revSentiBing_NBpredTst<-predict(nbModel1, revDTM_sentiBing_tst, type = "raw")
+
+auc(as.numeric(revDTM_sentiBing_trn$hiLo), revSentiBing_NBpredTrn[,2])
+auc(as.numeric(revDTM_sentiBing_tst$hiLo), revSentiBing_NBpredTst[,2])
+
+```
+
+
+
